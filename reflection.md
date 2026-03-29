@@ -92,15 +92,25 @@ classDiagram
     Scheduler *-- CareTask : schedules
 ```
 
-**b. Initial design**
+**d. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+The design uses four classes arranged in a clear separation between data and logic.
 
-**b. Design changes**
+`Pet` and `CareTask` are implemented as Python data classes because they are pure data holders — they describe *what exists* in the system, not *what the system does*. `Pet` stores the animal's profile (name, species, age, special needs) and knows how to describe itself. `CareTask` stores a single unit of work (title, duration, priority, optional time-of-day preference, and any ordering constraint) and knows whether it fits within a given time budget.
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+`Owner` is a regular class because it holds a mutable list of `Pet` objects alongside its own data (name, available minutes, preferences). It is responsible for representing the person's time constraints and preferences — the inputs that the scheduler must respect.
+
+`Scheduler` is the only class with real orchestration logic. It receives an `Owner`, a `Pet`, and a list of `CareTask` objects, then produces a prioritized daily plan that fits within the owner's available time. It is also responsible for explaining that plan in human-readable form. Keeping all scheduling decisions inside `Scheduler` means the other three classes stay simple and focused on their own data.
+
+**e. Design changes**
+
+Yes, three changes were made to the skeleton after reviewing the initial design for missing relationships and logic bottlenecks.
+
+1. **Replaced `CareTask.constraint: str` with `depends_on: str | None`** — the original `constraint` field was a free-form string (e.g., `"must happen before feeding"`). A scheduler cannot parse or enforce natural language, so it would have been ignored in practice. Replacing it with `depends_on`, which holds the *title* of a prerequisite task (e.g., `"Medication"`), gives `generate_schedule()` something concrete to act on: it can check whether the named task has already been scheduled before placing the dependent one.
+
+2. **Typed `CareTask.priority` as `Literal["low", "medium", "high"]`** — the original `str` type placed no restriction on what values were valid. An invalid priority like `"urgent"` or `"HIGH"` would silently produce wrong sort order. Using `Literal` makes the contract explicit and lets type checkers catch bad values at the call site before they cause subtle bugs at runtime.
+
+3. **Removed `Owner.pets: list[Pet]`** — `Owner` held a list of pets, but `Scheduler` also received a `pet` argument directly. These two references were out of sync with no code connecting them. Since the app targets a single pet per session and `Scheduler` already owns the pet, the redundant list on `Owner` was removed to eliminate the ambiguity.
 
 ---
 
