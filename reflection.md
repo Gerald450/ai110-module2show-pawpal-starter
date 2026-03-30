@@ -50,13 +50,22 @@ The system requires four main objects. Here is each one with its attributes and 
 
 ```mermaid
 classDiagram
-    class Owner {
-        +String name
-        +int available_minutes
-        +List~String~ preferences
-        +update_available_time(minutes: int)
-        +update_preferences(preferences: List~String~)
-        +get_summary() String
+    class CareTask {
+        +String title
+        +int duration_minutes
+        +String priority
+        +String frequency
+        +String preferred_time_of_day
+        +String time
+        +String depends_on
+        +bool completed
+        +date last_done_date
+        +get_description() String
+        +fits_in_budget(remaining_minutes) bool
+        +is_due_today() bool
+        +mark_complete() None
+        +reset() None
+        +renew() CareTask
     }
 
     class Pet {
@@ -64,32 +73,41 @@ classDiagram
         +String species
         +int age
         +List~String~ special_needs
-        +update_special_needs(needs: List~String~)
+        +List~CareTask~ tasks
+        +add_task(task) None
+        +remove_task(title) None
+        +get_pending_tasks() List~CareTask~
+        +update_special_needs(needs) None
         +get_description() String
     }
 
-    class CareTask {
-        +String title
-        +int duration_minutes
-        +String priority
-        +String preferred_time_of_day
-        +String constraint
-        +get_description() String
-        +fits_in_budget(remaining_minutes: int) bool
+    class Owner {
+        +String name
+        +int available_minutes
+        +List~String~ preferences
+        +List~Pet~ pets
+        +add_pet(pet) None
+        +get_all_tasks() List~CareTask~
+        +filter_tasks(pet_name, status) List
+        +update_available_time(minutes) None
+        +update_preferences(preferences) None
+        +get_summary() String
     }
 
     class Scheduler {
         +Owner owner
-        +Pet pet
-        +List~CareTask~ tasks
+        +Dict PRIORITY_ORDER
+        +Dict TIME_SLOT_ORDER
+        +sort_by_time(tasks) List~CareTask~
         +generate_schedule() List~CareTask~
+        +detect_conflicts() List~String~
+        +mark_task_complete(title) None
         +explain_plan() String
     }
 
-    Owner "1" --> "1..*" Pet : owns
-    Scheduler *-- Owner : has
-    Scheduler *-- Pet : has
-    Scheduler *-- CareTask : schedules
+    Owner "1" *-- "1..*" Pet : owns
+    Pet "1" *-- "0..*" CareTask : has
+    Scheduler --> Owner : schedules for
 ```
 
 **d. Initial design**

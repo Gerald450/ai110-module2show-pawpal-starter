@@ -1,93 +1,121 @@
-# PawPal+ (Module 2 Project)
+# 🐾 PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+A daily pet care planner built with Python and Streamlit. PawPal+ helps busy pet owners stay consistent with their animals' routines by generating a prioritised, conflict-aware daily schedule from a list of care tasks.
 
-## Scenario
+---
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+## 📸 Demo
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+---
 
-## What you will build
+## ✨ Features
 
-Your final app should:
+### Multi-pet support
+Register any number of pets under a single owner profile. Each pet holds its own task list independently, and every scheduling and filtering operation works across all pets simultaneously.
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+### Priority-based scheduling
+Tasks carry a priority level (`high`, `medium`, or `low`). The scheduler sorts all due tasks by priority before placing them into the daily plan, ensuring critical care (medication, feeding) is never pushed aside by lower-importance tasks.
 
-## Smarter Scheduling
+### Dependency constraints
+A task can declare `depends_on` — the title of another task that must be scheduled first. The scheduler performs a two-pass algorithm: a first pass places tasks with satisfied dependencies, and a second pass retries tasks whose dependency landed in the first pass. This guarantees, for example, that medication always follows feeding even when both are high priority.
 
-The scheduler was extended with four algorithmic improvements beyond the original priority-based sort:
+### Sorting by time (`Scheduler.sort_by_time`)
+Tasks can carry an optional start time in `HH:MM` format. `sort_by_time` uses Python's `sorted()` with a lambda that converts each time string to an `(hour, minute)` integer tuple for correct numeric comparison — preventing the string-sort trap where `"08:45"` would incorrectly precede `"08:05"`. Tasks without a time set sort to the end by defaulting to `(24, 0)`.
 
-**Time-of-day sorting (`Scheduler.sort_by_time`)** — Tasks can carry an optional `time` field in `"HH:MM"` format. `sort_by_time` uses Python's `sorted()` with a lambda that converts each time string to an `(hour, minute)` integer tuple, enabling correct numeric comparison. Tasks with no time set default to `(24, 0)` and sort to the end.
+### Task filtering by pet and status (`Owner.filter_tasks`)
+The task list can be narrowed by pet name, completion status (`pending` / `completed` / `all`), or both at once. Results are returned as `(pet_name, CareTask)` pairs so the caller always knows which pet a task belongs to, since `CareTask` holds no back-reference to its pet.
 
-**Task filtering (`Owner.filter_tasks`)** — Returns `(pet_name, CareTask)` pairs narrowed by pet name, completion status (`"pending"` / `"completed"` / `"all"`), or both. Each result carries the pet name explicitly because `CareTask` holds no back-reference to its pet — the caller always knows where a task came from.
+### Daily recurrence auto-renewal (`CareTask.renew`)
+When a `daily` or `weekly` task is marked complete via `Scheduler.mark_task_complete`, a fresh copy is automatically appended to the same pet's task list using `dataclasses.replace`. The renewed copy sets `last_done_date=today`, which causes `is_due_today()` to suppress it for the correct interval — tomorrow for daily tasks, seven days later for weekly ones. `as-needed` tasks are never auto-renewed.
 
-**Recurring task auto-renewal (`CareTask.renew` + `Scheduler.mark_task_complete`)** — When a `daily` or `weekly` task is marked complete, `mark_task_complete` appends a fresh copy to the same pet's task list via `CareTask.renew`. The renewed copy uses `dataclasses.replace` and sets `last_done_date=today` so `is_due_today()` suppresses it until the correct next cycle — tomorrow for daily tasks, seven days later for weekly ones. `as-needed` tasks are not auto-renewed.
+### Conflict detection (`Scheduler.detect_conflicts`)
+Scans all tasks due today and surfaces three categories of problems as plain warning strings — the method never raises an exception:
 
-**Conflict detection (`Scheduler.detect_conflicts`)** — Scans all tasks due today and reports three types of problems as warning strings (never raises):
-- *Exact-time collision* — two or more tasks share the same `HH:MM` start time, across any pet.
-- *Time-slot overload* — tasks in the same named slot (morning / afternoon / evening) whose combined duration exceeds the per-slot budget (`available_minutes ÷ 3`, minimum 60 min).
-- *Dependency-ordering conflict* — a task's required predecessor is assigned to a later time slot.
+- **Exact-time collision** — two or more tasks (across any pet) share the same `HH:MM` start time.
+- **Time-slot overload** — tasks assigned to the same named slot (`morning` / `afternoon` / `evening`) whose combined duration exceeds the per-slot budget (`available_minutes ÷ 3`, minimum 60 min).
+- **Dependency-ordering conflict** — a task's required predecessor is assigned to a later time slot, making the dependency impossible to honour.
 
-## Testing PawPal+
+### Frequency-aware scheduling (`CareTask.is_due_today`)
+Each task carries a `frequency` of `daily`, `weekly`, or `as-needed`. `is_due_today()` uses `last_done_date` to decide whether a task belongs on today's plan — weekly tasks suppress themselves for seven days after completion, and daily tasks suppress themselves for the rest of the day after renewal.
 
-### Running the test suite
+---
 
-```bash
-python -m pytest tests/test_pawpal.py -v
-```
-
-Remove `-v` for a compact summary. All 37 tests should pass in under a second.
-
-### What the tests cover
-
-The suite is organised into four groups:
-
-**Core model** (`CareTask`, `Pet`, `Owner`) — 16 tests
-Verifies that tasks report their budget fit correctly, mark themselves complete, reset cleanly, and produce accurate descriptions. Covers pet task management (add, remove, pending filter) and owner state (available time, pet registration, summary output).
-
-**Scheduler — scheduling logic** — 8 tests
-Confirms that high-priority tasks are placed first, tasks exceeding the time budget are skipped, `depends_on` constraints are respected (dependent task always follows its prerequisite), and completed tasks are excluded from the generated plan.
-
-**Sorting correctness** — 4 tests
-Proves `sort_by_time` returns tasks in true chronological order regardless of insertion order. Specifically checks that tasks within the same hour sort by minute (guarding against accidental string sort where `"08:45"` would precede `"08:05"`), that tasks with no `time` value always appear last, and that no tasks are lost during sorting.
-
-**Recurrence logic** — 5 tests
-Confirms that calling `mark_task_complete` on a `daily` or `weekly` task appends a second task to the pet's list. Checks that the renewed task starts as pending, and that `is_due_today()` returns `False` on it immediately — preventing the same task from appearing twice on today's schedule. Also verifies that `as-needed` tasks produce no renewal.
-
-**Conflict detection** — 4 tests
-Verifies that `detect_conflicts` flags an exact `HH:MM` collision between tasks on different pets, between tasks on the same pet, and that distinct times produce no false positive. Confirms the "lightweight" contract: the method always returns `list[str]` and never raises an exception.
-
-### Confidence level
-
-★★★★☆ (4 / 5)
-
-The core scheduling contract — priority ordering, dependency resolution, budget enforcement, and recurrence — is fully covered and all 37 tests pass reliably. The confidence gap is in areas deliberately left untested: duration-overlap conflicts (the scheduler checks only exact start-time collisions, not whether a 30-minute task at 07:30 overlaps a task starting at 07:45), edge cases around multi-pet dependency chains, and any behaviour that lives in the Streamlit UI layer (`app.py`) rather than the business logic.
-
-## Getting started
+## 🚀 Getting started
 
 ### Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Suggested workflow
+### Run the app
 
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
+```bash
+streamlit run app.py
+```
+
+### Run from the terminal (no UI)
+
+```bash
+python main.py
+```
+
+---
+
+## 🧪 Testing PawPal+
+
+### Run the test suite
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+Remove `-v` for a compact summary. All 37 tests pass in under a second.
+
+### What the tests cover
+
+| Group | Tests | What is verified |
+|---|---|---|
+| Core model (`CareTask`, `Pet`, `Owner`) | 16 | Budget fit, mark complete, reset, descriptions, task add/remove, pending filter, owner state |
+| Scheduler — scheduling logic | 8 | Priority order, budget enforcement, `depends_on` ordering, completed-task exclusion |
+| Sorting correctness | 4 | Chronological order, minute-level sort within the same hour, no tasks dropped, timed tasks before untimed |
+| Recurrence logic | 5 | Renewal created on complete, renewal starts pending, renewal not due today, weekly renewal, no renewal for `as-needed` |
+| Conflict detection | 4 | Cross-pet collision, same-pet collision, no false positive for distinct times, always returns `list[str]` |
+
+### Confidence level
+
+★★★★☆ (4 / 5)
+
+Core scheduling — priority ordering, dependency resolution, budget enforcement, and recurrence — is fully covered. The gap is in duration-overlap detection (only exact `HH:MM` collisions are caught, not overlapping windows), multi-pet dependency chains, and the Streamlit UI layer.
+
+---
+
+## 🗂 Project structure
+
+```
+pawpal_system.py   — CareTask, Pet, Owner, Scheduler classes
+app.py             — Streamlit UI
+main.py            — terminal demo (sorting, filtering, conflict output)
+tests/
+  test_pawpal.py   — 37-test automated suite
+reflection.md      — design decisions, UML, tradeoffs
+uml_final.png      — final class diagram
+```
+
+---
+
+## Smarter Scheduling — implementation notes
+
+Beyond the starter skeleton, four algorithmic improvements were added:
+
+**`Scheduler.sort_by_time`** — lambda-based `(hour, minute)` tuple sort; tasks without a time use `(24, 0)` as a sentinel.
+
+**`Owner.filter_tasks`** — single-pass loop with two independent guard clauses (one for pet name, one for status); returns tuples to preserve pet context.
+
+**`CareTask.renew` + `Scheduler.mark_task_complete`** — `dataclasses.replace` creates a shallow copy with only `completed` and `last_done_date` overridden; the scheduler locates the owning pet by iterating `owner.pets` so the renewal is appended to the correct list.
+
+**`Scheduler.detect_conflicts`** — builds `due_pairs: list[tuple[str, CareTask]]` in a single comprehension to preserve pet context, then runs three independent detection passes (exact-time bucket, slot-budget sum, dependency-slot comparison) and collects all results into one flat list.
