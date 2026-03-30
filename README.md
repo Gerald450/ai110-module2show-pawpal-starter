@@ -37,6 +37,41 @@ The scheduler was extended with four algorithmic improvements beyond the origina
 - *Time-slot overload* — tasks in the same named slot (morning / afternoon / evening) whose combined duration exceeds the per-slot budget (`available_minutes ÷ 3`, minimum 60 min).
 - *Dependency-ordering conflict* — a task's required predecessor is assigned to a later time slot.
 
+## Testing PawPal+
+
+### Running the test suite
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+Remove `-v` for a compact summary. All 37 tests should pass in under a second.
+
+### What the tests cover
+
+The suite is organised into four groups:
+
+**Core model** (`CareTask`, `Pet`, `Owner`) — 16 tests
+Verifies that tasks report their budget fit correctly, mark themselves complete, reset cleanly, and produce accurate descriptions. Covers pet task management (add, remove, pending filter) and owner state (available time, pet registration, summary output).
+
+**Scheduler — scheduling logic** — 8 tests
+Confirms that high-priority tasks are placed first, tasks exceeding the time budget are skipped, `depends_on` constraints are respected (dependent task always follows its prerequisite), and completed tasks are excluded from the generated plan.
+
+**Sorting correctness** — 4 tests
+Proves `sort_by_time` returns tasks in true chronological order regardless of insertion order. Specifically checks that tasks within the same hour sort by minute (guarding against accidental string sort where `"08:45"` would precede `"08:05"`), that tasks with no `time` value always appear last, and that no tasks are lost during sorting.
+
+**Recurrence logic** — 5 tests
+Confirms that calling `mark_task_complete` on a `daily` or `weekly` task appends a second task to the pet's list. Checks that the renewed task starts as pending, and that `is_due_today()` returns `False` on it immediately — preventing the same task from appearing twice on today's schedule. Also verifies that `as-needed` tasks produce no renewal.
+
+**Conflict detection** — 4 tests
+Verifies that `detect_conflicts` flags an exact `HH:MM` collision between tasks on different pets, between tasks on the same pet, and that distinct times produce no false positive. Confirms the "lightweight" contract: the method always returns `list[str]` and never raises an exception.
+
+### Confidence level
+
+★★★★☆ (4 / 5)
+
+The core scheduling contract — priority ordering, dependency resolution, budget enforcement, and recurrence — is fully covered and all 37 tests pass reliably. The confidence gap is in areas deliberately left untested: duration-overlap conflicts (the scheduler checks only exact start-time collisions, not whether a 30-minute task at 07:30 overlaps a task starting at 07:45), edge cases around multi-pet dependency chains, and any behaviour that lives in the Streamlit UI layer (`app.py`) rather than the business logic.
+
 ## Getting started
 
 ### Setup

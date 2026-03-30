@@ -196,3 +196,144 @@ def test_scheduler_explain_plan_no_tasks_fit():
     pet.add_task(CareTask("Bath", 40, priority="high"))
     plan = scheduler.explain_plan()
     assert "No tasks could be scheduled" in plan
+
+
+# ---------------------------------------------------------------------------
+# sort_by_time
+# ---------------------------------------------------------------------------
+
+def test_sort_by_time_chronological_order():
+    # Tasks added in reverse time order; sorted result must be earliest-first.
+    _, pet, scheduler = _make_scheduler()
+    tasks = [
+        CareTask("Evening meds",  5,  time="19:00"),
+        CareTask("Afternoon play", 20, time="14:00"),
+        CareTask("Morning walk",  30, time="07:30"),
+    ]
+    result = scheduler.sort_by_time(tasks)
+    assert [t.title for t in result] == ["Morning walk", "Afternoon play", "Evening meds"]
+
+
+def test_sort_by_time_tasks_without_time_go_last():
+    # Tasks with no time value must appear after all timed tasks.
+    _, pet, scheduler = _make_scheduler()
+    tasks = [
+        CareTask("No time task", 10),
+        CareTask("Early task",   10, time="06:00"),
+    ]
+    result = scheduler.sort_by_time(tasks)
+    assert result[0].title == "Early task"
+    assert result[-1].title == "No time task"
+
+
+def test_sort_by_time_same_hour_sorted_by_minute():
+    # Two tasks in the same hour must be ordered by minute, not string sort.
+    _, pet, scheduler = _make_scheduler()
+    tasks = [
+        CareTask("Late in hour",  5, time="08:45"),
+        CareTask("Early in hour", 5, time="08:05"),
+    ]
+    result = scheduler.sort_by_time(tasks)
+    assert result[0].time == "08:05"
+    assert result[1].time == "08:45"
+
+
+def test_sort_by_time_preserves_all_tasks():
+    # No tasks should be dropped during sorting.
+    _, pet, scheduler = _make_scheduler()
+    tasks = [CareTask(f"Task {i}", 5, time=f"0{i}:00") for i in range(1, 6)]
+    assert len(scheduler.sort_by_time(tasks)) == 5
+
+
+# ---------------------------------------------------------------------------
+# Recurrence (renew + mark_task_complete)
+# ---------------------------------------------------------------------------
+
+def test_daily_task_creates_renewal_on_complete():
+    # Marking a daily task complete via the scheduler must add a second task
+    # to the pet's list representing the next occurrence.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Walk", 20, frequency="daily"))
+    scheduler.mark_task_complete("Walk")
+    assert len(pet.tasks) == 2
+
+
+def test_renewal_is_not_completed():
+    # The renewed task must start in the pending state.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Walk", 20, frequency="daily"))
+    scheduler.mark_task_complete("Walk")
+    renewed = pet.tasks[1]
+    assert renewed.completed is False
+
+
+def test_renewal_not_due_today():
+    # The renewed daily task should not reappear on today's schedule;
+    # is_due_today() must return False because last_done_date == today.
+    from datetime import date
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Walk", 20, frequency="daily"))
+    scheduler.mark_task_complete("Walk")
+    renewed = pet.tasks[1]
+    assert renewed.is_due_today() is False
+
+
+def test_weekly_task_creates_renewal_on_complete():
+    # Weekly tasks must also produce a renewal when marked complete.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Brushing", 15, frequency="weekly"))
+    scheduler.mark_task_complete("Brushing")
+    assert len(pet.tasks) == 2
+
+
+def test_as_needed_task_does_not_renew():
+    # as-needed tasks have no recurrence cycle and must not produce a renewal.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Vet visit", 60, frequency="as-needed"))
+    scheduler.mark_task_complete("Vet visit")
+    assert len(pet.tasks) == 1
+
+
+# ---------------------------------------------------------------------------
+# detect_conflicts
+# ---------------------------------------------------------------------------
+
+def test_detect_conflicts_flags_exact_time_collision():
+    # Two tasks on different pets sharing the same HH:MM must produce a warning.
+    owner = Owner("Jordan", available_minutes=120)
+    mochi = Pet("Mochi", "dog", 3)
+    luna  = Pet("Luna",  "cat", 5)
+    mochi.add_task(CareTask("Morning walk",   30, time="07:30"))
+    luna.add_task( CareTask("Wet food feeding", 5, time="07:30"))
+    owner.add_pet(mochi)
+    owner.add_pet(luna)
+    conflicts = Scheduler(owner).detect_conflicts()
+    assert any("07:30" in c for c in conflicts)
+
+
+def test_detect_conflicts_no_false_positive_for_different_times():
+    # Tasks at distinct times must not be flagged as a collision.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Walk",    30, time="07:30"))
+    pet.add_task(CareTask("Feeding", 10, time="08:00"))
+    conflicts = scheduler.detect_conflicts()
+    assert not any("Exact-time collision" in c for c in conflicts)
+
+
+def test_detect_conflicts_same_pet_same_time():
+    # Two tasks on the *same* pet at the same time must also be caught.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Walk",    30, time="07:30"))
+    pet.add_task(CareTask("Feeding", 10, time="07:30"))
+    conflicts = scheduler.detect_conflicts()
+    assert any("07:30" in c for c in conflicts)
+
+
+def test_detect_conflicts_returns_strings_not_exceptions():
+    # detect_conflicts must always return a list, never raise.
+    owner, pet, scheduler = _make_scheduler()
+    pet.add_task(CareTask("Walk", 20, time="08:00"))
+    pet.add_task(CareTask("Bath", 40, time="08:00"))
+    result = scheduler.detect_conflicts()
+    assert isinstance(result, list)
+    assert all(isinstance(msg, str) for msg in result)
