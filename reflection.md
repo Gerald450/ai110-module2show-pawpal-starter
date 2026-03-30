@@ -123,8 +123,11 @@ Yes, three changes were made to the skeleton after reviewing the initial design 
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The conflict detector checks for exact `HH:MM` start-time matches rather than overlapping durations.
+
+This means two tasks are only flagged as a conflict when they share the same start time string — for example, Mochi's "Morning walk" at `07:30` and Luna's "Wet food feeding" also at `07:30`. It does not detect the case where a 30-minute task starting at `07:30` overlaps with a 10-minute task starting at `07:45`, even though those two tasks occupy the same real-world window from 07:30 to 08:00.
+
+This tradeoff is reasonable for this scenario for three reasons. First, most pet care tasks do not have strict minute-level start times — a pet owner writes `07:30` to mean "sometime in the morning before breakfast," not "exactly at 07:30:00." Checking for exact collisions catches the obvious scheduling mistake (two tasks assigned the same slot) without false-positives from loose estimates. Second, implementing duration-overlap detection would require computing an end time for every task (`start + duration`), comparing every pair of tasks in O(n²), and handling tasks with no `time` value at all — substantially more code for a scenario where owners rarely fill in precise start times. Third, the system already detects broader time-pressure problems through the time-slot overload check, which flags when the total duration inside a named window (morning, afternoon, evening) exceeds the per-slot budget. Together the two checks cover both the precise case and the approximate case without requiring full interval arithmetic.
 
 ---
 
